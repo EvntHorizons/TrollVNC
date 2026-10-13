@@ -108,7 +108,7 @@ struct RootView:View {
     @State var shareText=""
     @State var deleteID:UUID?
     @Environment(\.scenePhase) var phase
-    let columns=[GridItem(.adaptive(minimum:300),spacing:20)]
+    let columns=[GridItem(.adaptive(minimum:340),spacing:20,alignment:.top)]
     func export(_ text:String){shareText=text;share=true}
     var body:some View {
         VStack(spacing:0) {
@@ -119,7 +119,7 @@ struct RootView:View {
                 projects.tabItem{Label("Projects",systemImage:"folder")}.tag(2)
                 notes.tabItem{Label("Notes",systemImage:"square.and.pencil")}.tag(3)
             }
-        }.background(Color(UIColor.systemGroupedBackground)).accentColor(Color(red:0.22,green:0.52,blue:0.69))
+        }.background(Color(UIColor.systemGroupedBackground)).accentColor(Color(UIColor { traits in traits.userInterfaceStyle == .dark ? UIColor(red:0.48,green:0.76,blue:0.94,alpha:1) : UIColor(red:0.12,green:0.38,blue:0.56,alpha:1) }))
         .preferredColorScheme(model.theme==0 ? nil : model.theme==1 ? .light : .dark)
         .sheet(isPresented:$share){Share(text:shareText)}
         .onChange(of:phase){if $0 == .active {model.refresh()} else {model.saveNotes()}}
