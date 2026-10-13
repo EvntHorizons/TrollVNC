@@ -1,0 +1,23 @@
+name: Build native Field Console
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '16.2'
+      - name: Install packaging tools
+        run: HOMEBREW_NO_AUTO_UPDATE=1 brew install ldid-procursus dpkg
+      - name: Compile native application
+        run: bash native-console/build.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-field-console
+          path: |
+            native-console/build/*.deb
+            native-console/build/SHA256SUMS
