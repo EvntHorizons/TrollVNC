@@ -41,7 +41,7 @@ def main():
             'storage':['/var/jb/usr/bin/df','-h'],
             'packages':['/var/jb/usr/bin/dpkg-query','-W'],
             'system':['/var/jb/usr/bin/uname','-a'],
-            'processes':['/var/jb/bin/ps','-A'],
+            'processes':['/bin/ps','-A'],
         }
         if kind not in commands:
             raise ValueError('Unknown diagnostic.')

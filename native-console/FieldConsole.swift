@@ -153,6 +153,10 @@ struct ToolkitView:View {
                     ToolButton(title:"Manage packages",symbol:"shippingbox"){openApp("org.coolstar.SileoStore")}
                     ToolButton(title:"Open TrollStore",symbol:"app.badge"){openApp("com.opa334.TrollStore")}
                     ToolButton(title:"Open Dopamine",symbol:"wrench.and.screwdriver"){openApp("com.opa334.Dopamine")}
+                    ToolButton(title:"Open camera",symbol:"camera"){openApp("com.apple.camera")}
+                    ToolButton(title:"Open photos",symbol:"photo"){openApp("com.apple.mobileslideshow")}
+                    ToolButton(title:"Record voice notes",symbol:"mic"){openApp("com.apple.VoiceMemos")}
+                    ToolButton(title:"Open Files",symbol:"folder"){openApp("com.apple.DocumentsApp")}
                 }
             }
             Panel(title:"Display") {Picker("Appearance",selection:$model.theme){Text("Automatic").tag(0);Text("Day").tag(1);Text("Night").tag(2)}.pickerStyle(.segmented).onChange(of:model.theme){UserDefaults.standard.set($0,forKey:"theme")}}

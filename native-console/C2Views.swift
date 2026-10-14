@@ -161,7 +161,7 @@ struct LinksView:View {
             ForEach(station.state.profiles){p in HStack{
                 Button{load(p)}label:{VStack(alignment:.leading){Text(p.name).font(.headline);Text(p.host.isEmpty ? "UDP receiver profile" : p.host).font(.caption)}}.frame(minHeight:44)
                 Spacer();Button{deleteProfile=p}label:{Image(systemName:"trash").frame(width:44,height:44)}.accessibilityLabel("Remove \(p.name)")
-            }
+            }}
             Input(title:"Connection name",text:$name)
             HStack{Input(title:"Host or IP (optional)",text:$host);Input(title:"TCP port",text:$port)}
             ToolButton(title:test.running ? "Checking…" : "Check TCP endpoint",symbol:"network"){test.test(host:host,port:port)}.disabled(test.running)
@@ -280,7 +280,7 @@ struct MissionView:View {
     func center(){if let p=station.state.points.first {region=MKCoordinateRegion(center:CLLocationCoordinate2D(latitude:p.latitude,longitude:p.longitude),span:MKCoordinateSpan(latitudeDelta:0.02,longitudeDelta:0.02))}}
     func move(_ i:Int,_ step:Int){let j=i+step;guard station.state.points.indices.contains(j) else{return};station.state.points.swapAt(i,j);station.save()}
     func exportDraft(){
-        do{let url=dataRoot.appendingPathComponent("mission-draft.geojson");try station.exportPlan().write(to:url,atomically:true,encoding:.utf8);export([url])}catch{error=error.localizedDescription}
+        do{let url=dataRoot.appendingPathComponent("mission-draft.geojson");try station.exportPlan().write(to:url,atomically:true,encoding:.utf8);export([url])}catch{self.error=error.localizedDescription}
     }
 }
 
