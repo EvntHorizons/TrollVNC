@@ -15,6 +15,10 @@ jobs:
         run: HOMEBREW_NO_AUTO_UPDATE=1 brew install ldid-procursus dpkg
       - name: Compile native application
         run: bash native-console/build.sh
+      - name: Verify MAVLink protocol fixtures
+        run: |
+          swiftc native-console/MAVPacket.swift native-console/tests/main.swift -o /tmp/c2-protocol-tests
+          /tmp/c2-protocol-tests
       - uses: actions/upload-artifact@v4
         with:
           name: native-field-console

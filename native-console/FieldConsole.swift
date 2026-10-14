@@ -19,6 +19,7 @@ final class Model: ObservableObject {
     @Published var busy = false
     @Published var saveStatus = "Saved locally"
     @Published var theme = 0
+    @Published var lastReport:URL?
     init() {
         do {
             try FileManager.default.createDirectory(at:dataRoot,withIntermediateDirectories:true)
@@ -42,7 +43,7 @@ final class Model: ObservableObject {
         guard !busy else {return};busy=true;output="Running…"
         DispatchQueue.global(qos:.userInitiated).async {
             let ptr=fc_run(path,argument);let text=ptr.map{String(cString:$0)} ?? "No output";freePointer(ptr)
-            DispatchQueue.main.async {self.output=text;self.busy=false;self.refresh()}
+            DispatchQueue.main.async {self.output=text;self.busy=false;self.refresh();self.archive(text)}
         }
     }
     func createExample() {
@@ -50,8 +51,26 @@ final class Model: ObservableObject {
         guard !FileManager.default.fileExists(atPath:url.path) else {refresh();return}
         do {try "import platform, shutil\nprint('Hello from Field Console')\nprint(platform.platform())\nprint('Free bytes:', shutil.disk_usage('/var/mobile').free)\n".write(to:url,atomically:true,encoding:.utf8);refresh()} catch {output=error.localizedDescription}
     }
+    func diagnostic(_ kind:String,host:String="",url:String="") {
+        guard !busy else{return}
+        do {
+            let data=try JSONSerialization.data(withJSONObject:["kind":kind,"host":host,"url":url])
+            try data.write(to:dataRoot.appendingPathComponent("diagnostic-request.json"),options:.atomic)
+            run("/var/jb/usr/bin/python3","/var/jb/Applications/FieldConsole.app/c2_checks.py")
+        } catch {output=error.localizedDescription}
+    }
+    func archive(_ text:String){
+        do {
+            let folder=dataRoot.appendingPathComponent("Reports")
+            try FileManager.default.createDirectory(at:folder,withIntermediateDirectories:true)
+            let url=folder.appendingPathComponent("report-\(Int(Date().timeIntervalSince1970*1000)).txt")
+            try ("C2 Tablet — \(Date())\n\n"+text).write(to:url,atomically:true,encoding:.utf8);lastReport=url
+            let old=try FileManager.default.contentsOfDirectory(at:folder,includingPropertiesForKeys:nil).filter{$0.pathExtension=="txt"}.sorted{$0.lastPathComponent>$1.lastPathComponent}
+            for file in old.dropFirst(20){try FileManager.default.removeItem(at:file)}
+        }catch{saveStatus="Report save failed: \(error.localizedDescription)"}
+    }
     func report() -> String {
-        return "Field Console — \(Date())\niPad Air 2 / iPadOS \(UIDevice.current.systemVersion)\nFree storage: \(free)\nBattery: \(battery)\nUptime: \(Int(ProcessInfo.processInfo.systemUptime/60)) minutes\nProjects: \(projectRoot.path)\nJailbreak tools: \(FileManager.default.isExecutableFile(atPath:"/var/jb/usr/bin/python3") ? "available" : "unavailable")\n\nLast diagnostic:\n\(output)"
+        return "C2 Tablet 2.0 — \(Date())\niPad Air 2 / iPadOS \(UIDevice.current.systemVersion)\nFree storage: \(free)\nBattery: \(battery)\nUptime: \(Int(ProcessInfo.processInfo.systemUptime/60)) minutes\nProjects: \(projectRoot.path)\nJailbreak tools: \(FileManager.default.isExecutableFile(atPath:"/var/jb/usr/bin/python3") ? "available" : "unavailable")\n\nLast diagnostic:\n\(output)"
     }
 }
 func freePointer(_ pointer: UnsafeMutablePointer<CChar>?) { if let p=pointer { Darwin.free(p) } }
@@ -95,12 +114,13 @@ struct Panel<Content:View>:View {
     let title:String;@ViewBuilder var content:Content
     var body:some View {VStack(alignment:.leading,spacing:16){Text(title).font(.title2.bold());content}.padding(24).frame(maxWidth:.infinity,alignment:.leading).background(Color(UIColor.secondarySystemGroupedBackground)).cornerRadius(16)}
 }
-struct RootView:View {
-    @StateObject var model=Model()
+struct ToolkitView:View {
+    @ObservedObject var model:Model
     @StateObject var test=ConnectionTest()
     @State var selected=0
     @State var host="127.0.0.1"
     @State var port="22"
+    @State var httpURL=""
     @State var projectName=""
     @State var projectURL=""
     @State var projectError=""
@@ -112,13 +132,8 @@ struct RootView:View {
     func export(_ text:String){shareText=text;share=true}
     var body:some View {
         VStack(spacing:0) {
-            HStack{Image(systemName:"slider.horizontal.3").font(.title).foregroundColor(gold);VStack(alignment:.leading){Text("Field Console").font(.title2.bold());Text("Native device utility").font(.caption).foregroundColor(.secondary)};Spacer();Button(action:model.refresh){Label("Refresh",systemImage:"arrow.clockwise")}.buttonStyle(.bordered)}.padding(.horizontal,28).padding(.vertical,16)
-            TabView(selection:$selected) {
-                device.tabItem{Label("Device",systemImage:"ipad")}.tag(0)
-                diagnostics.tabItem{Label("Diagnostics",systemImage:"waveform.path.ecg")}.tag(1)
-                projects.tabItem{Label("Projects",systemImage:"folder")}.tag(2)
-                notes.tabItem{Label("Notes",systemImage:"square.and.pencil")}.tag(3)
-            }
+            Picker("Tool group",selection:$selected){Text("Diagnostics").tag(0);Text("Projects").tag(1);Text("Device utilities").tag(2)}.pickerStyle(.segmented).padding(.horizontal,24).padding(.top,12)
+            if selected == 0 {diagnostics} else if selected == 1 {projects} else {device}
         }.background(Color(UIColor.systemGroupedBackground)).accentColor(Color(UIColor { traits in traits.userInterfaceStyle == .dark ? UIColor(red:0.48,green:0.76,blue:0.94,alpha:1) : UIColor(red:0.12,green:0.38,blue:0.56,alpha:1) }))
         .preferredColorScheme(model.theme==0 ? nil : model.theme==1 ? .light : .dark)
         .sheet(isPresented:$share){Share(text:shareText)}
@@ -152,12 +167,21 @@ struct RootView:View {
                 TextField("Port",text:$port).textFieldStyle(.roundedBorder).keyboardType(.numberPad).accessibilityLabel("TCP port")
                 ToolButton(title:test.running ? "Connecting…" : "Check connection",symbol:"network"){test.test(host:host,port:port)}.disabled(test.running)
                 Text(test.result).font(.callout).accessibilityIdentifier("connection-result")
+                ToolButton(title:"Resolve DNS",symbol:"network"){model.diagnostic("dns",host:host)}.disabled(model.busy)
+                ToolButton(title:"Ping host",symbol:"waveform.path"){model.diagnostic("ping",host:host)}.disabled(model.busy)
+                Text("HTTP address").font(.caption).foregroundColor(.secondary)
+                TextField("https://device.example",text:$httpURL).textFieldStyle(.roundedBorder).autocapitalization(.none).disableAutocorrection(true)
+                ToolButton(title:"Inspect HTTP headers",symbol:"doc.text.magnifyingglass"){model.diagnostic("http",url:httpURL)}.disabled(model.busy)
             }
             Panel(title:"System checks") {
                 ToolButton(title:"System information",symbol:"info.circle"){model.run("/var/jb/usr/bin/uname","-a")}.disabled(model.busy)
                 ToolButton(title:"Storage usage",symbol:"internaldrive"){model.run("/var/jb/usr/bin/df","-h")}.disabled(model.busy)
                 ToolButton(title:"Installed packages",symbol:"shippingbox"){model.run("/var/jb/usr/bin/dpkg-query","-W")}.disabled(model.busy)
                 ToolButton(title:"Share device report",symbol:"square.and.arrow.up"){export(model.report())}
+                ToolButton(title:"Network interfaces",symbol:"network"){model.diagnostic("interfaces")}.disabled(model.busy)
+                ToolButton(title:"Routing table",symbol:"arrow.triangle.branch"){model.diagnostic("routes")}.disabled(model.busy)
+                ToolButton(title:"Network sockets",symbol:"point.3.connected.trianglepath.dotted"){model.diagnostic("sockets")}.disabled(model.busy)
+                ToolButton(title:"Running processes",symbol:"list.bullet.rectangle"){model.diagnostic("processes")}.disabled(model.busy)
             }
         };Panel(title:"Diagnostic output") {Text(model.output).font(.system(.body,design:.monospaced)).textSelection(.enabled).frame(maxWidth:.infinity,alignment:.leading)}}.padding(24)}
     }
@@ -166,7 +190,7 @@ struct RootView:View {
             Panel(title:"Python projects"){
                 Text(projectRoot.path).font(.system(.callout,design:.monospaced)).textSelection(.enabled)
                 Text("Add .py files to this folder using SSH or the terminal. Runs stop after 15 seconds; results appear in Diagnostics.").foregroundColor(.secondary)
-                ForEach(model.files,id:\.self){file in ToolButton(title:"Run \(file)",symbol:"play.circle"){model.run("/var/jb/usr/bin/python3",projectRoot.appendingPathComponent(file).path);selected=1}.disabled(model.busy)}
+                ForEach(model.files,id:\.self){file in ToolButton(title:"Run \(file)",symbol:"play.circle"){model.run("/var/jb/usr/bin/python3",projectRoot.appendingPathComponent(file).path);selected=0}.disabled(model.busy)}
                 ToolButton(title:"Create example project",symbol:"plus.circle"){model.createExample()}
             }
             Panel(title:"Project shortcuts"){
@@ -198,4 +222,4 @@ struct RootView:View {
     }
 }
 struct LabeledValue:View {let name:String;let value:String;var body:some View{HStack{Text(name).foregroundColor(.secondary);Spacer();Text(value).fontWeight(.semibold)}.padding(.vertical,6)}}
-@main struct FieldConsoleApp:App {var body:some Scene{WindowGroup{RootView()}}}
+@main struct FieldConsoleApp:App {var body:some Scene{WindowGroup{C2Root()}}}
